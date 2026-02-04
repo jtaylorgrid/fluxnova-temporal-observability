@@ -1,0 +1,30 @@
+# Go binaries
+cdc-connector
+main
+fluxnova-decision-observability
+/demo-worker
+/demo-ui
+/demo-starter
+*.exe
+
+# Java/Maven build artifacts
+kafka-connect-xtdb/target/
+*.class
+*.jar
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config overrides
+config.local.yaml
+
+# Temporary files
+/tmp/
+*.log

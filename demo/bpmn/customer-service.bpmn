@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_CustomerService"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <bpmn:process id="customer-service-ticket" name="Customer Service Ticket Processing" isExecutable="true" camunda:historyTimeToLive="180">
+
+    <!-- Start Event -->
+    <bpmn:startEvent id="StartEvent" name="Ticket Received">
+      <bpmn:outgoing>Flow_Start_Fork</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- Parallel Gateway - Fork for concurrent tasks -->
+    <bpmn:parallelGateway id="Fork_Analysis" name="Start Analysis">
+      <bpmn:incoming>Flow_Start_Fork</bpmn:incoming>
+      <bpmn:outgoing>Flow_Fork_Sentiment</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Fork_Profile</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Fork_Churn</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <!-- External Task: Analyze Sentiment -->
+    <bpmn:serviceTask id="Task_AnalyzeSentiment" name="Analyze Sentiment" camunda:type="external" camunda:topic="analyze-sentiment">
+      <bpmn:incoming>Flow_Fork_Sentiment</bpmn:incoming>
+      <bpmn:outgoing>Flow_Sentiment_Join</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- External Task: Lookup Customer Profile -->
+    <bpmn:serviceTask id="Task_LookupProfile" name="Lookup Customer Profile" camunda:type="external" camunda:topic="lookup-customer-profile">
+      <bpmn:incoming>Flow_Fork_Profile</bpmn:incoming>
+      <bpmn:outgoing>Flow_Profile_Join</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- External Task: Check Churn Signals -->
+    <bpmn:serviceTask id="Task_CheckChurn" name="Check Churn Signals" camunda:type="external" camunda:topic="check-churn-signals">
+      <bpmn:incoming>Flow_Fork_Churn</bpmn:incoming>
+      <bpmn:outgoing>Flow_Churn_Join</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- Parallel Gateway - Join after analysis -->
+    <bpmn:parallelGateway id="Join_Analysis" name="Analysis Complete">
+      <bpmn:incoming>Flow_Sentiment_Join</bpmn:incoming>
+      <bpmn:incoming>Flow_Profile_Join</bpmn:incoming>
+      <bpmn:incoming>Flow_Churn_Join</bpmn:incoming>
+      <bpmn:outgoing>Flow_Join_Routing</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <!-- External Task: Decide Routing -->
+    <bpmn:serviceTask id="Task_DecideRouting" name="Decide Routing" camunda:type="external" camunda:topic="decide-routing">
+      <bpmn:incoming>Flow_Join_Routing</bpmn:incoming>
+      <bpmn:outgoing>Flow_Routing_Response</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- External Task: Generate Response -->
+    <bpmn:serviceTask id="Task_GenerateResponse" name="Generate Response" camunda:type="external" camunda:topic="generate-response">
+      <bpmn:incoming>Flow_Routing_Response</bpmn:incoming>
+      <bpmn:outgoing>Flow_Response_Gateway</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- Exclusive Gateway - Check if human review needed -->
+    <bpmn:exclusiveGateway id="Gateway_HumanReview" name="Human Review Needed?">
+      <bpmn:incoming>Flow_Response_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_NeedsHuman</bpmn:outgoing>
+      <bpmn:outgoing>Flow_AutoComplete</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- User Task: Human Review -->
+    <bpmn:userTask id="Task_HumanReview" name="Human Review Required" camunda:assignee="demo">
+      <bpmn:incoming>Flow_NeedsHuman</bpmn:incoming>
+      <bpmn:outgoing>Flow_HumanReview_End</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- End Events -->
+    <bpmn:endEvent id="EndEvent_Auto" name="Auto-Resolved">
+      <bpmn:incoming>Flow_AutoComplete</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="EndEvent_Human" name="Human Resolved">
+      <bpmn:incoming>Flow_HumanReview_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Sequence Flows -->
+    <bpmn:sequenceFlow id="Flow_Start_Fork" sourceRef="StartEvent" targetRef="Fork_Analysis" />
+    <bpmn:sequenceFlow id="Flow_Fork_Sentiment" sourceRef="Fork_Analysis" targetRef="Task_AnalyzeSentiment" />
+    <bpmn:sequenceFlow id="Flow_Fork_Profile" sourceRef="Fork_Analysis" targetRef="Task_LookupProfile" />
+    <bpmn:sequenceFlow id="Flow_Fork_Churn" sourceRef="Fork_Analysis" targetRef="Task_CheckChurn" />
+    <bpmn:sequenceFlow id="Flow_Sentiment_Join" sourceRef="Task_AnalyzeSentiment" targetRef="Join_Analysis" />
+    <bpmn:sequenceFlow id="Flow_Profile_Join" sourceRef="Task_LookupProfile" targetRef="Join_Analysis" />
+    <bpmn:sequenceFlow id="Flow_Churn_Join" sourceRef="Task_CheckChurn" targetRef="Join_Analysis" />
+    <bpmn:sequenceFlow id="Flow_Join_Routing" sourceRef="Join_Analysis" targetRef="Task_DecideRouting" />
+    <bpmn:sequenceFlow id="Flow_Routing_Response" sourceRef="Task_DecideRouting" targetRef="Task_GenerateResponse" />
+    <bpmn:sequenceFlow id="Flow_Response_Gateway" sourceRef="Task_GenerateResponse" targetRef="Gateway_HumanReview" />
+    <bpmn:sequenceFlow id="Flow_NeedsHuman" name="Yes" sourceRef="Gateway_HumanReview" targetRef="Task_HumanReview">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${responseDraft != null &amp;&amp; responseDraft.contains('"suggestHuman":true')}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_AutoComplete" name="No" sourceRef="Gateway_HumanReview" targetRef="EndEvent_Auto">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${responseDraft == null || !responseDraft.contains('"suggestHuman":true')}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_HumanReview_End" sourceRef="Task_HumanReview" targetRef="EndEvent_Human" />
+
+  </bpmn:process>
+
+  <!-- Diagram Information for visual rendering -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="customer-service-ticket">
+      <bpmndi:BPMNShape id="StartEvent_di" bpmnElement="StartEvent">
+        <dc:Bounds x="152" y="232" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="132" y="275" width="77" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Fork_Analysis_di" bpmnElement="Fork_Analysis">
+        <dc:Bounds x="245" y="225" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_AnalyzeSentiment_di" bpmnElement="Task_AnalyzeSentiment">
+        <dc:Bounds x="350" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_LookupProfile_di" bpmnElement="Task_LookupProfile">
+        <dc:Bounds x="350" y="210" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_CheckChurn_di" bpmnElement="Task_CheckChurn">
+        <dc:Bounds x="350" y="320" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Join_Analysis_di" bpmnElement="Join_Analysis">
+        <dc:Bounds x="505" y="225" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_DecideRouting_di" bpmnElement="Task_DecideRouting">
+        <dc:Bounds x="610" y="210" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_GenerateResponse_di" bpmnElement="Task_GenerateResponse">
+        <dc:Bounds x="770" y="210" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_HumanReview_di" bpmnElement="Gateway_HumanReview" isMarkerVisible="true">
+        <dc:Bounds x="925" y="225" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_HumanReview_di" bpmnElement="Task_HumanReview">
+        <dc:Bounds x="1030" y="100" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Auto_di" bpmnElement="EndEvent_Auto">
+        <dc:Bounds x="1062" y="232" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1046" y="275" width="68" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Human_di" bpmnElement="EndEvent_Human">
+        <dc:Bounds x="1192" y="122" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1170" y="165" width="81" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_Start_Fork_di" bpmnElement="Flow_Start_Fork">
+        <di:waypoint x="188" y="250" />
+        <di:waypoint x="245" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Fork_Sentiment_di" bpmnElement="Flow_Fork_Sentiment">
+        <di:waypoint x="270" y="225" />
+        <di:waypoint x="270" y="140" />
+        <di:waypoint x="350" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Fork_Profile_di" bpmnElement="Flow_Fork_Profile">
+        <di:waypoint x="295" y="250" />
+        <di:waypoint x="350" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Fork_Churn_di" bpmnElement="Flow_Fork_Churn">
+        <di:waypoint x="270" y="275" />
+        <di:waypoint x="270" y="360" />
+        <di:waypoint x="350" y="360" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Sentiment_Join_di" bpmnElement="Flow_Sentiment_Join">
+        <di:waypoint x="450" y="140" />
+        <di:waypoint x="530" y="140" />
+        <di:waypoint x="530" y="225" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Profile_Join_di" bpmnElement="Flow_Profile_Join">
+        <di:waypoint x="450" y="250" />
+        <di:waypoint x="505" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Churn_Join_di" bpmnElement="Flow_Churn_Join">
+        <di:waypoint x="450" y="360" />
+        <di:waypoint x="530" y="360" />
+        <di:waypoint x="530" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Join_Routing_di" bpmnElement="Flow_Join_Routing">
+        <di:waypoint x="555" y="250" />
+        <di:waypoint x="610" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Routing_Response_di" bpmnElement="Flow_Routing_Response">
+        <di:waypoint x="710" y="250" />
+        <di:waypoint x="770" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Response_Gateway_di" bpmnElement="Flow_Response_Gateway">
+        <di:waypoint x="870" y="250" />
+        <di:waypoint x="925" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_NeedsHuman_di" bpmnElement="Flow_NeedsHuman">
+        <di:waypoint x="950" y="225" />
+        <di:waypoint x="950" y="140" />
+        <di:waypoint x="1030" y="140" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_AutoComplete_di" bpmnElement="Flow_AutoComplete">
+        <di:waypoint x="975" y="250" />
+        <di:waypoint x="1062" y="250" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_HumanReview_End_di" bpmnElement="Flow_HumanReview_End">
+        <di:waypoint x="1130" y="140" />
+        <di:waypoint x="1192" y="140" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

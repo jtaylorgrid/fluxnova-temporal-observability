@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decision Observability - Fluxnova + XTDB</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f8f7f5;
+            --card-bg: #ffffff;
+            --border: #e5e5e5;
+            --text: #1a1a1a;
+            --text-muted: #4a4a4a;
+            --accent: #0066cc;
+            --accent-hover: #0052a3;
+            --success: #28a745;
+            --warning: #f7931d;
+            --danger: #dc3545;
+            --dark: #2c2f32;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Fira Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px 20px; }
+        .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        h1 { color: var(--dark); margin-bottom: 0; font-weight: 700; font-size: 1.6em; }
+        .logo { height: 24px; opacity: 0.8; }
+        .logo:hover { opacity: 1; }
+        h2 { color: var(--text); margin: 20px 0 10px; font-size: 1.2em; font-weight: 600; }
+        .subtitle { color: var(--text-muted); margin-bottom: 28px; font-size: 0.95em; }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+        .card h3 {
+            color: var(--dark);
+            margin-bottom: 18px;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+        .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 25px; }
+        .stat {
+            text-align: center;
+            padding: 24px 20px;
+            background: var(--card-bg);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            position: relative;
+            overflow: hidden;
+        }
+        .stat::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--accent);
+        }
+        .stat-value { font-size: 2.5em; font-weight: 700; color: var(--dark); line-height: 1.1; }
+        .stat-label { font-size: 0.85em; color: var(--text-muted); font-weight: 500; margin-top: 8px; }
+        .stat.danger::before { background: var(--danger); }
+        .stat.danger .stat-value { color: var(--danger); }
+        .stat.warning::before { background: var(--warning); }
+        .stat.warning .stat-value { color: var(--warning); }
+        .stat.success::before { background: var(--success); }
+        .stat.success .stat-value { color: var(--success); }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        th, td { padding: 14px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.75em; letter-spacing: 0.5px; background: var(--bg); }
+        tbody tr { transition: background 0.15s; }
+        tbody tr:hover { background: rgba(0, 102, 204, 0.08); }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.7em;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .badge-high { background: var(--danger); color: white; }
+        .badge-medium { background: var(--warning); color: white; }
+        .badge-low { background: var(--success); color: white; }
+        .text-mono { font-family: 'Fira Mono', 'Consolas', monospace; font-size: 0.9em; }
+        .text-muted { color: var(--text-muted); }
+        .tabs { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+        .tab {
+            padding: 11px 22px;
+            background: var(--card-bg);
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 0.92em;
+            transition: all 0.2s;
+        }
+        .tab:hover { border-color: var(--accent); color: var(--dark); }
+        .tab.active { background: var(--accent); color: white; border-color: var(--accent); font-weight: 600; }
+        .query-box {
+            background: #1e2127;
+            border-radius: 8px;
+            padding: 18px 20px;
+            font-family: 'Fira Mono', 'Consolas', monospace;
+            font-size: 0.82em;
+            overflow-x: auto;
+            white-space: pre;
+            color: #abb2bf;
+            margin-bottom: 18px;
+            line-height: 1.6;
+        }
+        .loading { text-align: center; padding: 50px 40px; color: var(--text-muted); }
+        .timeline {
+            position: relative;
+            padding-left: 30px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 10px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border);
+        }
+        .timeline-item {
+            position: relative;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -24px;
+            top: 17px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: 2px solid var(--card-bg);
+        }
+        .timeline-item.churn_prediction::before { background: var(--warning); }
+        .timeline-item.outcome::before { background: var(--danger); }
+        .timeline-time { font-size: 0.8em; color: var(--text-muted); }
+        .timeline-source { font-size: 0.75em; text-transform: uppercase; font-weight: 600; background: var(--accent); color: white; padding: 2px 8px; border-radius: 10px; display: inline-block; }
+        .timeline-item.churn_prediction .timeline-source { background: var(--warning); }
+        .timeline-item.outcome .timeline-source { background: var(--danger); }
+        .timeline-desc { margin-top: 8px; }
+        /* Demo Script Styles */
+        .script-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--card-bg);
+            color: var(--accent);
+            padding: 8px 14px;
+            border-radius: 6px;
+            border: 2px solid var(--accent);
+            font-size: 0.8em;
+            font-weight: 600;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .script-toggle:hover { background: var(--bg); }
+        .script-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 420px;
+            height: 100vh;
+            background: var(--card-bg);
+            box-shadow: -4px 0 20px rgba(0,0,0,0.15);
+            z-index: 999;
+            overflow-y: auto;
+        }
+        .script-overlay.active { display: block; }
+        .script-header {
+            position: sticky;
+            top: 0;
+            background: var(--bg);
+            color: var(--dark);
+            padding: 16px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+        .script-header h2 { font-size: 1.1em; margin: 0; color: var(--dark); }
+        .script-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.5em;
+            cursor: pointer;
+            padding: 0 8px;
+        }
+        .script-close:hover { color: var(--dark); }
+        .script-content { padding: 20px; }
+        .script-section { margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+        .script-section h3 { color: var(--dark); font-size: 1em; margin-bottom: 12px; }
+        .script-section p { font-size: 0.88em; line-height: 1.7; margin-bottom: 10px; color: var(--text); }
+        .step-num {
+            display: inline-block;
+            background: var(--accent);
+            color: white;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 22px;
+            font-size: 0.75em;
+            margin-right: 8px;
+        }
+        .script-action {
+            background: rgba(0, 102, 204, 0.08);
+            border-left: 3px solid var(--accent);
+            padding: 10px 12px;
+            margin: 12px 0;
+            font-size: 0.8em;
+            border-radius: 0 4px 4px 0;
+        }
+        .script-action strong { color: var(--dark); }
+        .script-pain {
+            background: rgba(220, 53, 69, 0.08);
+            border-left: 3px solid var(--danger);
+            padding: 10px 12px;
+            margin: 12px 0;
+            font-size: 0.8em;
+            border-radius: 0 4px 4px 0;
+        }
+        .script-solution {
+            background: rgba(40, 167, 69, 0.08);
+            border-left: 3px solid var(--success);
+            padding: 10px 12px;
+            margin: 12px 0;
+            font-size: 0.8em;
+            border-radius: 0 4px 4px 0;
+        }
+        .key-point { color: var(--accent); font-weight: 600; }
+        .script-toc {
+            background: var(--bg);
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        .script-toc h4 {
+            font-size: 0.8em;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .script-toc a {
+            display: block;
+            color: var(--dark);
+            text-decoration: none;
+            font-size: 0.85em;
+            padding: 4px 0;
+        }
+        .script-toc a:hover { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <!-- Demo Script Toggle -->
+    <div class="script-toggle" onclick="toggleScript()" title="Press 's' to toggle">
+        Script [S]
+    </div>
+
+    <!-- Demo Script Overlay -->
+    <div class="script-overlay" id="scriptOverlay">
+        <div class="script-header">
+            <h2>Demo Talk Track</h2>
+            <button class="script-close" onclick="toggleScript()">&times;</button>
+        </div>
+        <div class="script-content">
+            <div class="script-toc">
+                <h4>Sections</h4>
+                <a href="#why-fluxnova">0. Why Fluxnova?</a>
+                <a href="#intro">1. The Problem</a>
+                <a href="#demo">2. Live Demo</a>
+                <a href="#activity-context">3. Activity Decision Context</a>
+                <a href="#xtdb">4. Why XTDB</a>
+                <a href="#close">5. Closing</a>
+            </div>
+
+            <div class="script-section" id="why-fluxnova">
+                <h3><span class="step-num">0</span> Why Fluxnova?</h3>
+                <p>"Before we dive in, let me explain why we're using <strong>Fluxnova</strong> for agent orchestration."</p>
+                <div class="script-solution">
+                    <strong>Key insight:</strong> "Fluxnova is a <span class="key-point">FINOS-governed open source</span> workflow engine, forked from Camunda 7 by Fidelity, NatWest, Deutsche Bank, and Capital One."
+                </div>
+                <p>"It gives you <strong>visual BPMN design</strong>, built-in human-in-the-loop, error handling, and parallel execution — all battle-tested in enterprise environments."</p>
+                <div class="script-action">
+                    <strong>Transition:</strong> "But Fluxnova wasn't designed to be a long-term audit database. That's where XTDB comes in..."
+                </div>
+            </div>
+
+            <div class="script-section" id="intro">
+                <h3><span class="step-num">1</span> The Problem</h3>
+                <p>"We're looking at a customer service AI agent orchestrated by Fluxnova. It analyzes tickets, checks churn risk, and routes to the appropriate queue."</p>
+                <div class="script-pain">
+                    <strong>The problem:</strong> "ML model predictions have <span class="key-point">propagation lag</span>. By the time a customer is flagged as high-risk, they may have already been routed to the wrong queue."
+                </div>
+                <p>"When a regulator asks <em>'what did your AI know when it made that decision?'</em> — you need to answer with precision."</p>
+            </div>
+
+            <div class="script-section" id="demo">
+                <h3><span class="step-num">2</span> Live Demo</h3>
+                <div class="script-action">
+                    <strong>Action:</strong> Click the "Audit: High-Risk Customers" tab
+                </div>
+                <p>"This bitemporal query shows customers who were <strong>already flagged as high churn risk</strong> at the moment their ticket workflow started."</p>
+                <p>"Notice the <code>FOR VALID_TIME AS OF</code> clause — this is XTDB's bitemporal magic. We're asking: what did the churn model believe <em>at that exact moment</em>?"</p>
+                <div class="script-action">
+                    <strong>Action:</strong> Click "Counterfactual Analysis" tab
+                </div>
+                <p>"Here we join predictions with actual outcomes. We can see which high-risk customers actually churned, and calculate the <strong>total lost LTV</strong>."</p>
+            </div>
+
+            <div class="script-section" id="activity-context">
+                <h3><span class="step-num">3</span> Activity Decision Context</h3>
+                <div class="script-action">
+                    <strong>Action:</strong> Click "Activity Context" tab
+                </div>
+                <p>"This is the <span class="key-point">direct activity writes</span> feature. Each external task calls <code>xtdb.Save()</code> to capture exactly what it knew at decision time."</p>
+                <div class="script-solution">
+                    <strong>Two data sources:</strong> CDC captures <em>what the process did</em>. Direct writes capture <em>what external systems believed</em>. Together = complete observability.
+                </div>
+            </div>
+
+            <div class="script-section" id="xtdb">
+                <h3><span class="step-num">4</span> Why XTDB</h3>
+                <p>"XTDB gives us <strong>two time dimensions</strong>:"</p>
+                <p>"<strong>Valid Time</strong> — when was this fact true in the real world?"</p>
+                <p>"<strong>System Time</strong> — when did the database learn about it?"</p>
+                <div class="script-solution">
+                    <strong>Key benefit:</strong> "You can backfill corrections <span class="key-point">without losing history</span>. The audit trail is immutable."
+                </div>
+            </div>
+
+            <div class="script-section" id="close">
+                <h3><span class="step-num">5</span> Closing</h3>
+                <p>"<strong>Decision Observability</strong> = knowing what your AI knew when it made each decision."</p>
+                <p>"Fluxnova + XTDB gives you enterprise orchestration with regulatory-grade audit trails."</p>
+                <div class="script-solution">
+                    <strong>Call to action:</strong> "Both are open source. Fluxnova is FINOS-governed. XTDB is Apache 2.0. Try the demo at the GitHub link."
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="header">
+            <h1>Decision Observability for BPMN Workflows</h1>
+            <img src="https://cdn.brandfetch.io/idyloU541m/theme/dark/logo.svg?c=1bxid64Mup7aczewSAYMX&t=1729658573277" alt="Grid Dynamics" class="logo">
+        </div>
+        <p class="subtitle">Bitemporal audit of process decisions using Fluxnova + XTDB</p>
+
+        <div class="stat-grid">
+            <div class="stat" id="stat-processes">
+                <div class="stat-value">-</div>
+                <div class="stat-label">Processes Tracked</div>
+            </div>
+            <div class="stat danger" id="stat-misrouted">
+                <div class="stat-value">-</div>
+                <div class="stat-label">High Churn Risk at Start</div>
+            </div>
+            <div class="stat warning" id="stat-lost-ltv">
+                <div class="stat-value">-</div>
+                <div class="stat-label">Lost LTV from Churned</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-tab="intro">Introduction</div>
+            <div class="tab" data-tab="audit">Audit: High-Risk Customers</div>
+            <div class="tab" data-tab="counterfactual">Counterfactual Analysis</div>
+            <div class="tab" data-tab="timeline">Event Timeline</div>
+            <div class="tab" data-tab="activity-context">Activity Context</div>
+            <div class="tab" data-tab="export" style="margin-left: auto; background: var(--accent); color: white;">Export Static HTML</div>
+        </div>
+
+        <div id="tab-intro" class="tab-content">
+            <div class="card" style="border: 2px solid var(--accent);">
+                <h3>What is Decision Observability?</h3>
+                <p style="margin-bottom: 1em;">
+                    <strong>Decision Observability</strong> is the ability to audit and understand decisions made by automated processes
+                    using <strong>bitemporal data</strong>. When BPMN workflows make routing decisions or act on ML predictions,
+                    organizations need to answer:
+                </p>
+                <ul style="margin-left: 1.5em; margin-bottom: 1.5em; line-height: 2;">
+                    <li><strong>What did the process know</strong> when it made that decision?</li>
+                    <li><strong>What should it have known</strong> if data had propagated faster?</li>
+                    <li><strong>Can we prove this</strong> to a regulator in 3 years?</li>
+                </ul>
+
+                <h4 style="margin: 1.5em 0 1em;">Two Complementary Data Capture Approaches</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div style="background: var(--bg); padding: 1em; border-radius: 8px;">
+                        <h5 style="color: var(--accent);">1. CDC via Kafka Connect</h5>
+                        <p style="font-size: 0.9em; color: var(--text-muted);">Streams Fluxnova history events into XTDB. Captures <em>what the process did</em>.</p>
+                    </div>
+                    <div style="background: var(--bg); padding: 1em; border-radius: 8px;">
+                        <h5 style="color: var(--success);">2. Direct Activity Writes</h5>
+                        <p style="font-size: 0.9em; color: var(--text-muted);">External tasks call <code>xtdb.Save()</code> to capture decision context.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="border: 2px solid #0066cc; background: linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%);">
+                <h3 style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.4em;">🚀</span>
+                    Fluxnova for AI Agent Orchestration
+                </h3>
+                <p style="margin-bottom: 1em; font-size: 1.05em;">
+                    <strong>Fluxnova</strong> isn't just for traditional workflows—it's the <strong>ideal platform for orchestrating AI agents</strong>.
+                    While LLM agents can reason and act autonomously, they need structure for reliability, auditability, and enterprise-grade operations.
+                </p>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 1.5em 0;">
+                    <div>
+                        <h4 style="color: var(--accent); margin-bottom: 0.8em;">Why BPMN for Agents?</h4>
+                        <ul style="margin-left: 1.2em; line-height: 1.9; font-size: 0.95em;">
+                            <li><strong>Visual Process Design</strong> — Model agent workflows with drag-and-drop BPMN notation</li>
+                            <li><strong>External Tasks</strong> — Each AI agent step is an external task that can call LLMs, tools, or APIs</li>
+                            <li><strong>Human-in-the-Loop</strong> — Built-in user tasks for escalation, approval, and oversight</li>
+                            <li><strong>Error Handling</strong> — Compensation, retries, and boundary events for resilient agents</li>
+                            <li><strong>Parallel Execution</strong> — Fork/join patterns for concurrent agent reasoning</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 style="color: var(--success); margin-bottom: 0.8em;">Enterprise-Ready Features</h4>
+                        <ul style="margin-left: 1.2em; line-height: 1.9; font-size: 0.95em;">
+                            <li><strong>Full Audit Trail</strong> — Every decision logged with bitemporal history via XTDB</li>
+                            <li><strong>Process Visibility</strong> — Cockpit UI shows real-time agent execution state</li>
+                            <li><strong>Versioning</strong> — Deploy new agent versions without breaking running instances</li>
+                            <li><strong>Multi-tenancy</strong> — Isolate agent workflows by team or customer</li>
+                            <li><strong>Open Source</strong> — FINOS-governed, backed by major financial institutions</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div style="background: var(--bg); border-radius: 8px; padding: 1em; margin-top: 1em;">
+                    <h4 style="margin-bottom: 0.8em;">Live Example: Customer Service Agent Workflow</h4>
+                    <p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 1em;">
+                        The BPMN process below orchestrates multiple "agent" tasks in parallel—sentiment analysis, customer lookup,
+                        and churn prediction—then makes a routing decision and generates a response. Each external task could invoke an LLM.
+                    </p>
+                    <img src="/fluxnova-ui.png" alt="Fluxnova BPMN Process" style="width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--border);">
+                </div>
+
+                <div style="margin-top: 1.5em; padding: 1em; background: rgba(0, 102, 204, 0.08); border-radius: 8px;">
+                    <p style="margin: 0; font-size: 0.95em;">
+                        <strong>Learn more:</strong>
+                        <a href="https://fluxnova.finos.org/" target="_blank" style="color: var(--accent);">fluxnova.finos.org</a> |
+                        <a href="https://github.com/finos/fluxnova-bpm-platform" target="_blank" style="color: var(--accent);">GitHub</a> |
+                        <a href="https://www.finos.org/press/finos-launches-fluxnova-with-fidelity-investments-natwest-group-deutsche-bank-and-capital-one-an-open-source-orchestration-platform-to-scale-process-automation" target="_blank" style="color: var(--accent);">Why Open Source Orchestration?</a>
+                    </p>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Architecture</h3>
+                <div id="architecture-diagram" style="margin-bottom: 1.5em;">
+                    <img src="/architecture.svg" alt="Decision Observability Architecture" style="width: 100%; height: auto;">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 1.5em;">
+                    <div style="background: var(--bg); padding: 1.2em; border-radius: 8px; border-left: 4px solid var(--accent);">
+                        <h4 style="color: var(--accent); margin-bottom: 0.8em;">Fluxnova (Process Engine)</h4>
+                        <p style="font-size: 0.9em; color: var(--text-muted); line-height: 1.7;">
+                            Fluxnova executes BPMN workflows and exposes a <strong>History API</strong> that tracks every process instance,
+                            activity execution, and variable change. The CDC connector polls this API and streams events to Kafka,
+                            which are then consumed by Kafka Connect and written to XTDB.
+                        </p>
+                    </div>
+                    <div style="background: var(--bg); padding: 1.2em; border-radius: 8px; border-left: 4px solid var(--warning);">
+                        <h4 style="color: var(--warning); margin-bottom: 0.8em;">Kafka + Kafka Connect</h4>
+                        <p style="font-size: 0.9em; color: var(--text-muted); line-height: 1.7;">
+                            Kafka provides durable, ordered event streaming between Fluxnova and XTDB. The <strong>XTDB Sink Connector</strong>
+                            transforms events into XTDB records with proper bitemporal timestamps, ensuring <code>_valid_from</code> reflects
+                            when the event actually occurred in the business domain.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="border: 2px solid var(--success);">
+                <h3 style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.2em;">🗄️</span>
+                    XTDB: The Bitemporal Foundation
+                </h3>
+                <p style="margin-bottom: 1.2em; font-size: 1.02em;">
+                    <a href="https://xtdb.com" target="_blank" style="color: var(--accent);"><strong>XTDB</strong></a> is a bitemporal database that tracks
+                    <strong>two time dimensions</strong> for every record—enabling powerful audit and compliance queries that traditional databases cannot support.
+                </p>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 1.2em 0;">
+                    <div style="background: linear-gradient(135deg, #e8f5e9 0%, #ffffff 100%); padding: 1.2em; border-radius: 8px;">
+                        <h5 style="color: var(--success); margin-bottom: 0.6em;">Valid Time (<code>_valid_from</code> / <code>_valid_to</code>)</h5>
+                        <p style="font-size: 0.88em; color: var(--text-muted); line-height: 1.6;">
+                            When was this fact <strong>true in the real world</strong>? A churn prediction made on Monday is valid from Monday,
+                            even if we only learned about it on Tuesday. This enables point-in-time queries like
+                            <code>FOR VALID_TIME AS OF timestamp</code>.
+                        </p>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #e3f2fd 0%, #ffffff 100%); padding: 1.2em; border-radius: 8px;">
+                        <h5 style="color: var(--accent); margin-bottom: 0.6em;">System Time (<code>_system_from</code> / <code>_system_to</code>)</h5>
+                        <p style="font-size: 0.88em; color: var(--text-muted); line-height: 1.6;">
+                            When did <strong>the database learn</strong> this fact? This is immutable and automatic—perfect for audit trails.
+                            Queries like <code>FOR SYSTEM_TIME AS OF timestamp</code> show exactly what the system believed at any past moment.
+                        </p>
+                    </div>
+                </div>
+
+                <div style="background: #1e2127; border-radius: 8px; padding: 1em; margin: 1em 0;">
+                    <p style="color: #98c379; font-size: 0.8em; margin-bottom: 0.5em;">-- Example: What churn score did we know about when the process started?</p>
+                    <code style="color: #abb2bf; font-size: 0.85em; line-height: 1.6;">
+SELECT p.process_instance_id, c.churn_score, c.risk_level<br>
+FROM fluxnova_processes p<br>
+JOIN churn_predictions <span style="color: #c678dd;">FOR VALID_TIME AS OF</span> p.start_time AS c<br>
+&nbsp;&nbsp;ON c.customer_id = p.business_key
+                    </code>
+                </div>
+
+                <h4 style="margin: 1.5em 0 0.8em;">Why Bitemporality Matters for Decision Observability</h4>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                    <div style="text-align: center; padding: 1em; background: var(--bg); border-radius: 8px;">
+                        <div style="font-size: 1.8em; margin-bottom: 0.3em;">🔍</div>
+                        <strong style="font-size: 0.9em;">Audit Queries</strong>
+                        <p style="font-size: 0.8em; color: var(--text-muted); margin-top: 0.4em;">
+                            Prove what data was available when a decision was made—even years later
+                        </p>
+                    </div>
+                    <div style="text-align: center; padding: 1em; background: var(--bg); border-radius: 8px;">
+                        <div style="font-size: 1.8em; margin-bottom: 0.3em;">⏪</div>
+                        <strong style="font-size: 0.9em;">Late-Arriving Data</strong>
+                        <p style="font-size: 0.8em; color: var(--text-muted); margin-top: 0.4em;">
+                            Backfill corrections without losing history—valid time can be in the past
+                        </p>
+                    </div>
+                    <div style="text-align: center; padding: 1em; background: var(--bg); border-radius: 8px;">
+                        <div style="font-size: 1.8em; margin-bottom: 0.3em;">📊</div>
+                        <strong style="font-size: 0.9em;">Cross-Source Joins</strong>
+                        <p style="font-size: 0.8em; color: var(--text-muted); margin-top: 0.4em;">
+                            Combine process events with ML predictions, CRM data, and more in one query
+                        </p>
+                    </div>
+                </div>
+
+                <div style="margin-top: 1.5em; padding: 1em; background: rgba(40, 167, 69, 0.08); border-radius: 8px;">
+                    <p style="margin: 0; font-size: 0.95em;">
+                        <strong>Learn more:</strong>
+                        <a href="https://xtdb.com" target="_blank" style="color: var(--accent);">xtdb.com</a> |
+                        <a href="https://docs.xtdb.com/about/time-in-xtdb.html" target="_blank" style="color: var(--accent);">Bitemporality Explained</a> |
+                        <a href="https://github.com/xtdb/xtdb" target="_blank" style="color: var(--accent);">GitHub</a>
+                    </p>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Integration Points</h3>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                    <div>
+                        <h4 style="color: var(--accent); margin-bottom: 0.8em;">CDC Tables (Automatic)</h4>
+                        <p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 1em;">
+                            Populated automatically via Kafka Connect from Fluxnova's History API:
+                        </p>
+                        <ul style="font-size: 0.9em; margin-left: 1.2em; line-height: 1.8;">
+                            <li><code>fluxnova_processes</code> — Process instance lifecycle (start, complete, terminate)</li>
+                            <li><code>fluxnova_events</code> — Activity instances with variables and durations</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 style="color: var(--success); margin-bottom: 0.8em;">Activity Context Tables (Explicit)</h4>
+                        <p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 1em;">
+                            Written directly by external task workers using <code>xtdb.Save()</code>:
+                        </p>
+                        <ul style="font-size: 0.9em; margin-left: 1.2em; line-height: 1.8;">
+                            <li><code>activity_churn_signals</code> — Churn scores captured at decision time</li>
+                            <li><code>activity_routing_decisions</code> — Full context of routing decisions</li>
+                        </ul>
+                    </div>
+                </div>
+                <div style="background: var(--bg); padding: 1em; border-radius: 8px; margin-top: 1.2em;">
+                    <p style="font-size: 0.9em; color: var(--text-muted); margin: 0;">
+                        <strong>Key insight:</strong> CDC captures <em>what the process did</em>, while direct activity writes capture
+                        <em>what external systems believed</em> at the exact moment of decision. Together, they provide complete observability.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-audit" class="tab-content" style="display:none">
+            <div class="card">
+                <h3>Customers with High Churn Risk at Process Start</h3>
+                <div class="query-box">-- Bitemporal query: What was known at decision time?
+SELECT process_instance_id, start_time, customer_id, churn_score
+FROM fluxnova_processes p
+JOIN churn_predictions c
+  FOR VALID_TIME AS OF p.start_time
+  ON c.customer_id = p.business_key
+WHERE c.churn_score > 0.7</div>
+                <div id="misrouted-results" class="loading">Loading audit results...</div>
+            </div>
+        </div>
+
+        <div id="tab-counterfactual" class="tab-content" style="display:none">
+            <div class="card">
+                <h3>High-Risk Customers: Predicted vs Actual Outcomes</h3>
+                <div class="query-box">-- Counterfactual: What actually happened?
+SELECT customer_id, churn_score, churned, churn_reason, final_ltv
+FROM churn_predictions c
+JOIN customer_outcomes o ON o.customer_id = c.customer_id
+WHERE c.churn_score > 0.7</div>
+                <div id="counterfactual-results" class="loading">Loading counterfactual analysis...</div>
+            </div>
+        </div>
+
+        <div id="tab-timeline" class="tab-content" style="display:none">
+            <div class="card">
+                <h3>Unified Event Timeline</h3>
+                <p style="color: var(--text-muted); margin-bottom: 15px;">
+                    All events from Fluxnova processes, churn predictions, and customer outcomes.
+                </p>
+                <div id="timeline-results" class="timeline loading">Loading timeline...</div>
+            </div>
+        </div>
+
+        <div id="tab-activity-context" class="tab-content" style="display:none">
+            <div class="card">
+                <h3>Activity Decision Context</h3>
+                <div style="background: rgba(40, 167, 69, 0.1); border-left: 3px solid var(--success); padding: 12px 16px; border-radius: 0 6px 6px 0; margin-bottom: 20px;">
+                    <strong style="color: var(--success);">Direct Activity Writes:</strong>
+                    Data captured by external tasks using <code>xtdb.Save()</code>.
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div>
+                        <h4 style="margin-bottom: 12px;">Churn Signals Captured</h4>
+                        <div id="activity-churn-results" class="loading">Loading...</div>
+                    </div>
+                    <div>
+                        <h4 style="margin-bottom: 12px;">Routing Decisions Captured</h4>
+                        <div id="activity-routing-results" class="loading">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-export" class="tab-content" style="display:none">
+            <div class="card" style="text-align: center; padding: 3em;">
+                <h3 style="margin-bottom: 1em;">Export Static HTML Report</h3>
+                <p style="color: var(--text-muted); margin-bottom: 2em; max-width: 600px; margin-left: auto; margin-right: auto;">
+                    Generate a fully self-contained HTML file with all current data embedded.
+                    The export includes processes, audit results, counterfactual analysis, timeline events,
+                    activity context, and all diagrams — no server required to view.
+                </p>
+                <a href="/api/export" class="btn" style="display: inline-block; padding: 14px 32px; font-size: 1.1em; text-decoration: none; background: var(--accent); color: white; border-radius: 8px; font-weight: 600;">
+                    Download Static Export
+                </a>
+                <p style="color: var(--text-muted); margin-top: 1.5em; font-size: 0.85em;">
+                    The file will be named <code>decision-observability-export.html</code>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Demo Script Toggle
+        function toggleScript() {
+            document.getElementById('scriptOverlay').classList.toggle('active');
+        }
+
+        // Keyboard shortcut 's' to toggle script
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 's' || e.key === 'S') {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                e.preventDefault();
+                toggleScript();
+            }
+        });
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Export tab: navigate directly to download
+                if (tab.dataset.tab === 'export') {
+                    window.location.href = '/api/export';
+                    return;
+                }
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+                tab.classList.add('active');
+                document.getElementById('tab-' + tab.dataset.tab).style.display = 'block';
+            });
+        });
+
+        async function loadData() {
+            try {
+                const [processes, misrouted, counterfactual, timeline, churnSignals, routingDecisions] = await Promise.all([
+                    fetch('/api/processes').then(r => r.json()),
+                    fetch('/api/audit/misrouted').then(r => r.json()),
+                    fetch('/api/audit/counterfactual').then(r => r.json()),
+                    fetch('/api/timeline').then(r => r.json()),
+                    fetch('/api/activity/churn-signals').then(r => r.json()),
+                    fetch('/api/activity/routing-decisions').then(r => r.json())
+                ]);
+
+                document.querySelector('#stat-processes .stat-value').textContent = processes ? processes.length : 0;
+                document.querySelector('#stat-misrouted .stat-value').textContent = misrouted.count || 0;
+                document.querySelector('#stat-lost-ltv .stat-value').textContent = '$' + (counterfactual.total_lost_ltv || 0).toLocaleString();
+
+                renderMisrouted(misrouted);
+                renderCounterfactual(counterfactual);
+                renderTimeline(timeline);
+                renderChurnSignals(churnSignals);
+                renderRoutingDecisions(routingDecisions);
+            } catch (err) {
+                console.error('Error loading data:', err);
+            }
+        }
+
+        function renderMisrouted(data) {
+            const container = document.getElementById('misrouted-results');
+            if (!data.results || data.results.length === 0) {
+                container.innerHTML = '<p class="text-muted">No high-risk customers found. Run the demo to generate data.</p>';
+                return;
+            }
+            container.innerHTML = `<table>
+                <thead><tr><th>Customer</th><th>Churn Score</th><th>Risk</th><th>Decision Time</th><th>Lag</th></tr></thead>
+                <tbody>${data.results.map(r => `<tr>
+                    <td><strong>${r.customer_id}</strong></td>
+                    <td class="text-mono">${(r.churn_score * 100).toFixed(0)}%</td>
+                    <td><span class="badge badge-${r.risk_level}">${r.risk_level}</span></td>
+                    <td class="text-mono">${new Date(r.decision_time).toLocaleTimeString()}</td>
+                    <td class="text-mono">${Math.round(r.lag_seconds / 60)}m</td>
+                </tr>`).join('')}</tbody>
+            </table>`;
+        }
+
+        function renderCounterfactual(data) {
+            const container = document.getElementById('counterfactual-results');
+            if (!data.results || data.results.length === 0) {
+                container.innerHTML = '<p class="text-muted">No counterfactual data. Load predictions and outcomes first.</p>';
+                return;
+            }
+            container.innerHTML = `
+                <div class="stat-grid" style="margin-bottom: 20px">
+                    <div class="stat danger"><div class="stat-value">${data.churned}</div><div class="stat-label">Churned</div></div>
+                    <div class="stat success"><div class="stat-value">${data.retained}</div><div class="stat-label">Retained</div></div>
+                    <div class="stat warning"><div class="stat-value">${Math.round(data.churned / data.high_risk_total * 100)}%</div><div class="stat-label">Churn Rate</div></div>
+                </div>
+                <table>
+                    <thead><tr><th>Customer</th><th>Churn Score</th><th>Outcome</th><th>Reason</th><th>LTV</th></tr></thead>
+                    <tbody>${data.results.map(r => `<tr>
+                        <td><strong>${r.customer_id}</strong></td>
+                        <td class="text-mono">${(r.churn_score * 100).toFixed(0)}%</td>
+                        <td><span class="badge badge-${r.churned ? 'high' : 'low'}">${r.churned ? 'Churned' : 'Retained'}</span></td>
+                        <td class="text-muted">${r.churn_reason || '—'}</td>
+                        <td class="text-mono">$${r.final_ltv.toLocaleString()}</td>
+                    </tr>`).join('')}</tbody>
+                </table>`;
+        }
+
+        function renderTimeline(data) {
+            const container = document.getElementById('timeline-results');
+            if (!data || data.length === 0) {
+                container.innerHTML = '<p class="text-muted">No timeline events. Run the demo to generate data.</p>';
+                return;
+            }
+            container.classList.remove('loading');
+            container.innerHTML = data.map(e => `
+                <div class="timeline-item ${e.source}">
+                    <div class="timeline-source">${e.source}</div>
+                    <div class="timeline-time">${new Date(e.event_time).toLocaleString()}</div>
+                    <div class="timeline-desc"><strong>${e.id}</strong>: ${e.description}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderChurnSignals(data) {
+            const container = document.getElementById('activity-churn-results');
+            if (!data || data.length === 0) {
+                container.innerHTML = '<p class="text-muted">No churn signals captured yet.</p>';
+                return;
+            }
+            container.innerHTML = `<table>
+                <thead><tr><th>Customer</th><th>Score</th><th>Risk</th><th>Time</th></tr></thead>
+                <tbody>${data.slice(0, 10).map(r => `<tr>
+                    <td><strong>${r.customer_id || '-'}</strong></td>
+                    <td class="text-mono">${r.churn_score ? (r.churn_score * 100).toFixed(0) + '%' : '-'}</td>
+                    <td><span class="badge badge-${r.risk_level || 'low'}">${r.risk_level || '-'}</span></td>
+                    <td class="text-mono text-muted">${r.valid_from ? new Date(r.valid_from).toLocaleTimeString() : '-'}</td>
+                </tr>`).join('')}</tbody>
+            </table>`;
+        }
+
+        function renderRoutingDecisions(data) {
+            const container = document.getElementById('activity-routing-results');
+            if (!data || data.length === 0) {
+                container.innerHTML = '<p class="text-muted">No routing decisions captured yet.</p>';
+                return;
+            }
+            container.innerHTML = `<table>
+                <thead><tr><th>Queue</th><th>Priority</th><th>Reasons</th><th>Time</th></tr></thead>
+                <tbody>${data.slice(0, 10).map(r => `<tr>
+                    <td><strong>${r.queue || '-'}</strong></td>
+                    <td class="text-mono">${r.priority || '-'}</td>
+                    <td class="text-muted" style="font-size: 0.85em;">${r.reason_codes || '-'}</td>
+                    <td class="text-mono text-muted">${r.valid_from ? new Date(r.valid_from).toLocaleTimeString() : '-'}</td>
+                </tr>`).join('')}</tbody>
+            </table>`;
+        }
+
+        loadData();
+        setInterval(loadData, 5000);
+    </script>
+</body>
+</html>

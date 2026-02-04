@@ -1,0 +1,128 @@
+services:
+  # FluxNova (Camunda 7 compatible) - using Camunda 7 image until FluxNova releases
+  fluxnova:
+    image: camunda/camunda-bpm-platform:7.20.0
+    container_name: fluxnova-engine
+    ports:
+      - "18080:8080"
+    environment:
+      - DB_DRIVER=org.h2.Driver
+      - DB_URL=jdbc:h2:mem:process-engine;DB_CLOSE_DELAY=-1
+      - DB_USERNAME=sa
+      - DB_PASSWORD=sa
+    networks:
+      - fluxnova-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/engine-rest/engine || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  xtdb:
+    image: ghcr.io/xtdb/xtdb:latest
+    container_name: fluxnova-xtdb
+    ports:
+      - "15432:5432"
+      - "18081:3000"
+    volumes:
+      - xtdb-data:/var/lib/xtdb
+    networks:
+      - fluxnova-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz/started || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: fluxnova-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://fluxnova-kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@fluxnova-kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: FluxNovaCDCCluster01
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    ports:
+      - "19092:9092"
+    networks:
+      - fluxnova-network
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  kafka-connect:
+    build:
+      context: ./kafka-connect-xtdb
+      dockerfile: Dockerfile
+    container_name: fluxnova-kafka-connect
+    depends_on:
+      kafka:
+        condition: service_healthy
+      xtdb:
+        condition: service_healthy
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: fluxnova-kafka:9092
+      CONNECT_REST_ADVERTISED_HOST_NAME: fluxnova-kafka-connect
+      CONNECT_GROUP_ID: fluxnova-cdc-connect
+      CONNECT_CONFIG_STORAGE_TOPIC: _fluxnova-connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _fluxnova-connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _fluxnova-connect-status
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_PLUGIN_PATH: /usr/share/java
+    ports:
+      - "18083:8083"
+    networks:
+      - fluxnova-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/connectors || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  cdc-connector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fluxnova-cdc-connector
+    depends_on:
+      fluxnova:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      - FLUXNOVA_BASE_URL=http://fluxnova-engine:8080/engine-rest
+      - KAFKA_BROKERS=fluxnova-kafka:9092
+      - LOG_LEVEL=debug
+      - POLL_INTERVAL=5s
+    networks:
+      - fluxnova-network
+    restart: unless-stopped
+
+volumes:
+  xtdb-data:
+  kafka-data:
+
+networks:
+  fluxnova-network:
+    driver: bridge

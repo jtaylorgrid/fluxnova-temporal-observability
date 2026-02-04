@@ -1,0 +1,16 @@
+fluxnova:
+  base_url: http://localhost:8080/engine-rest
+  username: ""
+  password: ""
+
+kafka:
+  brokers:
+    - localhost:9092
+  events_topic: fluxnova-events
+  processes_topic: fluxnova-processes
+
+pipeline:
+  poll_interval: 10s
+  batch_size: 100
+
+log_level: info
